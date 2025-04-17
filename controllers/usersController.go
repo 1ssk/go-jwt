@@ -3,6 +3,7 @@ package controllers
 import (
 	"net/http"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/1ssk/go-jwt/initializers"
@@ -12,24 +13,35 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9.!#$%&'*+/=?^_` + "`" + `{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$`)
+
 func Signup(c *gin.Context) {
+	var body models.User
 
-	var body struct {
-		Email    string
-		Password string
-	}
-
-	if c.Bind(&body) != nil {
+	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Failed to read body",
+			"error": "Invalid request body",
 		})
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), 10)
-
-	if err != nil {
+	if !emailRegex.MatchString(body.Email) {
 		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid email format",
+		})
+		return
+	}
+
+	if len(body.Password) < 4 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Password must be at least 4 characters long",
+		})
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(body.Password), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to hash password",
 		})
 		return
@@ -37,46 +49,46 @@ func Signup(c *gin.Context) {
 
 	user := models.User{Email: body.Email, Password: string(hash)}
 	result := initializers.DB.Create(&user)
-
 	if result.Error != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Failed to create user",
+			"error": "Failed to create user, email may already exist",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{})
-
+	c.JSON(http.StatusOK, gin.H{
+		"message": "User created successfully",
+		"user_id": user.ID,
+	})
 }
 
 func Login(c *gin.Context) {
-
-	var body struct {
-		Email    string
-		Password string
+	var body models.User
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Invalid request body",
+		})
+		return
 	}
 
-	if c.Bind(&body) != nil {
+	if !emailRegex.MatchString(body.Email) {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Failed to read body",
+			"error": "Invalid email format",
 		})
 		return
 	}
 
 	var user models.User
-	initializers.DB.First(&user, "email = ?", body.Email)
-
-	if user.ID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
+	result := initializers.DB.Where("email = ?", body.Email).First(&user)
+	if result.Error != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "Invalid email or password",
 		})
 		return
 	}
 
-	err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password))
-
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(body.Password)); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "Invalid email or password",
 		})
 		return
@@ -87,27 +99,34 @@ func Login(c *gin.Context) {
 		"exp": time.Now().Add(time.Hour * 24 * 30).Unix(),
 	})
 
-	// Sign and get the complete encoded token as a string using the secret
 	tokenString, err := token.SignedString([]byte(os.Getenv("SECRET")))
-
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Invalid to create token",
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to create token",
 		})
 		return
 	}
 
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("Authorization", tokenString, 3600*24*30, "", "", false, true)
+	c.SetCookie("Authorization", tokenString, 3600*24*30, "/", "", false, true)
 
-	c.JSON(http.StatusOK, gin.H{})
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Login successful",
+		"user_id": user.ID,
+	})
 }
 
 func Validate(c *gin.Context) {
-
-	user, _ := c.Get("user")
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "User not found in context",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message": user,
+		"message": "User validated",
+		"user":    user,
 	})
 }
