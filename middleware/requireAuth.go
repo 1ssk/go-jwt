@@ -9,7 +9,7 @@ import (
 	"github.com/1ssk/go-jwt/initializers"
 	"github.com/1ssk/go-jwt/models"
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt"
 )
 
 func RequireAuth(c *gin.Context) {
@@ -45,6 +45,7 @@ func RequireAuth(c *gin.Context) {
 		}
 
 		c.Set("user", user)
+		c.Set("role", user.Role)
 
 		c.Next()
 
@@ -53,4 +54,13 @@ func RequireAuth(c *gin.Context) {
 		c.AbortWithStatus(http.StatusUnauthorized)
 	}
 
+}
+
+func RequireAdmin(c *gin.Context) {
+	role, exists := c.Get("role")
+	if !exists || role != "admin" {
+		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Admin access required"})
+		return
+	}
+	c.Next()
 }

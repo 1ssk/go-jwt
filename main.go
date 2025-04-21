@@ -21,6 +21,7 @@ func main() {
 	r.POST("/signup", controllers.Signup)
 	r.POST("/login", controllers.Login)
 	r.GET("/validate", middleware.RequireAuth, controllers.Validate)
+	r.PUT("/admin/update-role/:id", middleware.RequireAuth, middleware.RequireAdmin, controllers.UpdateAdmin)
 
 	r.Run()
 }

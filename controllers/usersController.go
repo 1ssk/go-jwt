@@ -9,7 +9,7 @@ import (
 	"github.com/1ssk/go-jwt/initializers"
 	"github.com/1ssk/go-jwt/models"
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -47,7 +47,7 @@ func Signup(c *gin.Context) {
 		return
 	}
 
-	user := models.User{Email: body.Email, Password: string(hash)}
+	user := models.User{Email: body.Email, Password: string(hash), Role: "user"}
 	result := initializers.DB.Create(&user)
 	if result.Error != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -96,6 +96,7 @@ func Login(c *gin.Context) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"sub": user.ID,
+		"role": user.Role,
 		"exp": time.Now().Add(time.Hour * 24 * 30).Unix(),
 	})
 
@@ -113,6 +114,27 @@ func Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Login successful",
 		"user_id": user.ID,
+	})
+}
+
+func UpdateAdmin(c *gin.Context) {
+	id := c.Param("id")
+
+	var roleAdmin struct {
+		Role string
+	}
+
+	c.Bind(&roleAdmin)
+
+	var updateAdmin models.User
+	initializers.DB.First(&updateAdmin, id)
+
+	initializers.DB.Model(&updateAdmin).Updates(models.User{
+		Role: roleAdmin.Role,
+	})
+
+	c.JSON(200, gin.H{
+		"Role": "update role",
 	})
 }
 
